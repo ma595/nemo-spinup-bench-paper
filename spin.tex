@@ -1,0 +1,406 @@
+\documentclass{article}
+
+
+
+\usepackage{arxiv}
+
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsmath}        % math environments and \text
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{graphicx}
+\usepackage{natbib}
+\usepackage{doi}
+
+
+
+\title{A benchmark for AI-accelerated ocean spin-up}
+
+%\date{September 9, 1985}	% Here you can change the date presented in the paper title
+%\date{} 					% Or removing it
+
+\author{%
+    \normalfont
+    \href{https://orcid.org/0009-0002-7043-6769}{\includegraphics[scale=0.06]{orcid.pdf}\hspace{1mm}Matt Archer}\textsuperscript{1,$\dagger$},\quad
+    Isaac Akanho\textsuperscript{1},\quad
+    Simon Sadler\textsuperscript{1},\quad
+    Surbhi Goel\textsuperscript{1},\\[2pt]
+    Etienne Meunier\textsuperscript{2},\quad
+    Guillaume Gachon\textsuperscript{2},\quad
+    David Kamm\textsuperscript{1},\quad
+    Julie Deshayes\textsuperscript{2}
+    \\[8pt]
+    \textsuperscript{1}Institute of Computing for Climate Science (ICCS), University of Cambridge, UK \\
+    \textsuperscript{2}LOCEAN, Institut Pierre-Simon Laplace (IPSL), Sorbonne Universit\'e, France \\[4pt]
+    \textsuperscript{$\dagger$}Correspondence: \texttt{mattjarcher3@gmail.com},\texttt{iccs@cam.ac.uk
+}
+
+% Uncomment to remove the date
+%\date{}
+
+% Uncomment to override  the `A preprint' in the header
+%\renewcommand{\headeright}{Technical Report}
+%\renewcommand{\undertitle}{Technical Report}
+\renewcommand{\shorttitle}{A benchmark for AI-accelerated ocean spin-up}
+
+%%% Add PDF metadata to help others organize their library
+%%% Once the PDF is generated, you can check the metadata with
+%%% $ pdfinfo template.pdf
+\hypersetup{
+pdftitle={A benchmark for AI-accelerated ocean spin-up},
+pdfsubject={physics.ao-ph, cs.LG},
+pdfauthor={Matt Archer, Isaac Akanho, Simon Sadler, Julie Deshayes, Etienne Meunier, Guillaume Gachon, David Kamm},
+pdfkeywords={ocean spin-up, NEMO, benchmark, machine learning, climate modelling},
+}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+	Spinning up an ocean general circulation model to a statistical
+	equilibrium is among the most computationally expensive steps in
+	climate modelling, often requiring thousands of simulated years to
+	reach a drift-free baseline. A growing body of work uses machine
+	learning to shortcut this procedure by predicting equilibrated
+	ocean states, yet comparisons across methods remain difficult:
+	each study uses its own configuration, forcing, diagnostics, and
+	restart-file handling. We present \textbf{nemo-spinup-bench}, an
+	open benchmark for AI-accelerated spin-up of the NEMO ocean model.
+	The benchmark decomposes the problem into three reusable
+	components: forecasting, restart-file construction, and
+	physics-based evaluation, each exposed as a standalone Python
+	package with a pluggable strategy interface, reproducible
+	pipelines, and continuous integration. We ship reference
+	baselines (PCA with Gaussian-process forecasting) on the idealised
+	DINO configuration, along with a published dataset of NEMO
+	outputs and restarts. By separating the ML forecaster from the
+	surrounding numerical machinery, the benchmark lets new methods
+	(including deep generative models and neural emulators) be
+	evaluated against a common yardstick, with planned extensions to
+	OM4 and Oceananigans.
+\end{abstract}
+
+
+% keywords can be removed
+\keywords{Ocean spin-up \and NEMO \and Benchmark \and Machine learning \and Climate modelling \and DINO}
+
+
+\section{Introduction}
+
+Recent progress in AI-driven oceanography spans neural general
+circulation models~\citep{kochkov_neural_2024}, global ocean
+emulators~\citep{dheeshjith_samudra_2025}, and deep generative approaches for producing
+physically consistent ocean
+states~\citep{meunier_learning_2025, gorce_physically_2025}. Progress
+in this area is increasingly supported by open benchmarks such as
+OceanBench for short-range
+forecasting~\citep{bytezcom_oceanbench_2025}, and by shared idealised
+model configurations such as the DINO diabatic pole-to-pole
+setup~\citep{kamm_dino_2025} used throughout this paper.
+
+
+ ‘Spin-up’ is the process by which a model is run forward from an initialization state to a stable state. It is a long and computationally expensive step for ocean and climate models. It takes a lot of resources to reach a stable state (of the order to 0.5M CPU-hours for a global ocean model) and has to be repeated for each new experiment (about 5 experiments/year at IPSL), which means that the centre consumes 2.5M cpu-hours/year just to bring the model from an initial state (often arbitrarily taken as having no ocean current and a climatological present-day temperature/salinity) to a stable state that we can analyse, not to mention the human labour to launch and monitor all these runs. This is a global problem at the scale of any centre in the world for oceanic and land components; both have long spin-up phases. Thus, accelerating the spin-up (even by a small amount) by generating better initial states for the ocean models could have a tremendous impact on the field. 
+
+Accelerating spin-up is both a machine learning problem (generating new states) and a computer science problem (efficiently delivering these new states to the model). The machine learning sophistication of the spin-up problem is very high; it amounts to generating new, high-dimensional states that are physically stable and closer to convergence than the usual initialization. However, with advances in generative learning and the rise of climate emulators, we can realistically hope that deep learning will bring new solutions to the table. History tells us [imagenet, davis, voc, mnist, celeb ...] that the best way to really address a rich deep learning challenge is to build a benchmark and open it for researchers to compete; this will foster a variety of approaches for the deep learning community and is likely to be far more efficient than working solely on the field with the climate science community. The spin-up task is close to image generation or long-term video forecasting, which attract many researchers, although it is rather daunting for researchers outside of oceanography to start due to the complexity of evaluating new states which requires interacting with ocean models
+
+
+\section{Related work}
+\label{sec:related}
+
+% TODO: Position against neural GCMs (Kochkov et al.), Samudra, hybrid
+% state-generation work (Meunier, Gorce), and prior benchmarks (OceanBench,
+% DINO diabatic, Spinup-Evaluation).
+
+
+\section{The spin-up problem}
+\label{sec:problem}
+
+% TODO: Formal definition of spin-up, convergence criteria, and the
+% computational cost argument. Introduce DINO as the reference configuration.
+
+
+\section{Benchmark design}
+\label{sec:benchmark}
+
+\texttt{nemo-spinup-bench} defines a reproducible, end-to-end task for
+evaluating machine-learning-based acceleration of ocean spin-up. The
+current benchmark is built around the DINO idealised diabatic
+configuration of NEMO~\citep{kamm_dino_2025}, which offers the minimum
+complexity required to exhibit the large-scale circulation patterns
+relevant to spin-up while being small enough to permit rapid iteration.
+Extensions to OM4 and Oceananigans are planned as future work, and the
+component interfaces have been designed so that swapping the underlying
+ocean model amounts to providing a new variable-to-file mapping and a
+compatible restart writer, rather than altering the pipeline itself. A dataset containing the
+DINO simulation outputs, restart files, and reference evaluation outputs
+is published on Zenodo~\citep{archer_dino_dataset_2026} and is pulled in
+as a submodule by the benchmark repository, so that any reported result
+is tied to a specific, citable snapshot of the data.
+
+The benchmark deliberately fixes the task rather than the method: given a
+simulation window of $N$ training time units, a method must produce a
+projected ocean state $M$ time units in the future (the cadence is set
+by the input data: yearly, monthly, or other), from which a valid NEMO
+restart file
+is assembled and evaluated. Every component between the input window and
+the final restart is pluggable. The default pipeline ships a PCA +
+Gaussian process baseline, recovering the behaviour of the original
+spin-up tool~\citep{gorce_physically_2025}, but any alternative
+dimensionality-reduction or forecasting strategy can be substituted by
+registering a new class and selecting it through a YAML configuration
+(Section~\ref{sec:baselines}).
+
+\subsection{Pipeline}
+\label{sec:pipeline}
+
+The benchmark is composed of three interoperable tools, each released as
+an installable Python package with its own test suite and continuous
+integration:
+
+\begin{itemize}
+  \item \textbf{\texttt{nemo-spinup-forecast}} performs
+    dimensionality reduction on the training window, fits a forecaster in
+    the reduced space, and reconstructs predictions for sea-surface
+    height, temperature, and salinity. Each run writes to a timestamped,
+    content-addressed output directory, so experiments accumulate without
+    clobbering each other.
+  \item \textbf{\texttt{nemo-spinup-restart}} consumes these predictions
+    together with the mesh mask and a source restart and derives the
+    remaining prognostic fields required by NEMO (density, velocities,
+    surface-mean diagnostics), producing a restart file that NEMO can
+    pick up without modification. An upsampling path based on
+    xESMF bilinear interpolation~\citep{meunier_learning_2025} allows
+    coarse-resolution predictions to be applied to finer target grids.
+  \item \textbf{\texttt{nemo-spinup-evaluation}} scores the resulting
+    restart against a physically-motivated reference run, computing a
+    suite of domain metrics and optionally recomputing diagnostic
+    quantities such as potential density from the underlying temperature
+    and salinity fields~\citep{archer_spinup-evaluation_2026}.
+\end{itemize}
+
+The default example drives the full pipeline on a 50-year DINO window:
+baseline grids and restarts are first evaluated, a thirty-year forecast
+is produced from the $20 \rightarrow 50$ year segment, a new restart is
+assembled, and the final state is re-evaluated against the reference. A
+second example applies the same pipeline to previously published
+diffusion-based predictions~\citep{gorce_physically_2025}, and reproduces
+the reported metrics to within a floating-point tolerance, providing an
+external check on the implementation.
+
+\subsection{Metrics}
+\label{sec:metrics}
+
+Evaluation is physics-based rather than purely statistical. For each
+canonical variable (temperature, salinity, sea-surface height, and
+derived density), the benchmark reports mean absolute error and RMSE
+against a reference run, computed either on grid output files, on
+restart files, or on both. Variable-to-file binding is driven by a YAML
+mapping, so the same metrics can be applied to different model
+configurations (for example ORCA2/1) and, with appropriate mappings, to
+non-NEMO outputs that adopt a similar data layout.
+
+Two features matter for reproducibility. First, the evaluation tool
+validates required coordinates (including the handling of NEMO
+\texttt{nav\_lat}/\texttt{nav\_lon} coordinates, whose loss on variable
+extraction was previously observed to change a representative
+temperature metric from $3.24$ to $11.51$). Second, large datasets are
+loaded lazily through Dask, with an eager-mode toggle for smaller
+files, making the metrics tractable on either a laptop or a high-memory
+node. Temporal alignment between the simulation and the reference is
+handled through CDO-based resampling, so simulations produced at
+different output frequencies can be compared on a common time axis.
+
+
+\section{Baselines}
+\label{sec:baselines}
+
+The forecasting framework ships two registries of interchangeable
+components (one for dimensionality reduction and one for forecasting)
+which together define the baselines shipped with the benchmark. Both
+registries are exposed as \texttt{name $\rightarrow$ class} dictionaries
+and selected at runtime through \texttt{techniques\_config.yaml}.
+
+\paragraph{Dimensionality reduction.}
+Two implementations are provided out of the box:
+
+\begin{itemize}
+  \item \textbf{PCA} (\texttt{DimensionalityReductionPCA}): linear
+    principal-component analysis applied to the masked, standardised
+    ocean field. The number of retained components is either a fixed
+    integer or a target fraction of explained variance, controlled by
+    the \texttt{--comp} CLI argument.
+  \item \textbf{Kernel PCA} (\texttt{DimensionalityReductionKernelPCA}):
+    a non-linear variant using scikit-learn's kernel PCA, intended
+    as a drop-in reference for non-linear reductions.
+\end{itemize}
+
+\paragraph{Forecasting.}
+Two Gaussian-process variants are registered, both built on a shared
+kernel following the original formulation by Tissot and co-authors.
+% TODO: kernel description goes here.
+The two wrappers differ only in how this regressor is invoked:
+
+\begin{itemize}
+  \item \textbf{\texttt{GaussianProcessForecaster}}: a direct
+    forecaster that fits the GP once on the full training window and
+    predicts all future steps in a single call. Returns both point
+    predictions and posterior standard deviations.
+  \item \textbf{\texttt{GaussianProcessRecursiveForecaster}}: a
+    recursive forecaster built on \texttt{skforecast}'s
+    \texttt{ForecasterRecursive}, which feeds lagged targets and rolling
+    window features back into the regressor to produce multi-step
+    forecasts one step at a time. Uncertainty estimates are not
+    available in this mode.
+\end{itemize}
+
+\paragraph{Data.}
+The baselines are driven by a published DINO dataset hosted on
+Zenodo~\citep{archer_dino_dataset_2026}. Two archives are used:
+\texttt{200.zip} contains 200 years of annual-mean DINO output on the
+native grid (sea surface height, temperature, salinity, and companion
+fields on the T, U, V grids, together with mesh masks), and
+\texttt{restart.zip} contains the matching 200 annual restart files
+needed to seed a continuation run of NEMO. Forecasting is performed on
+a contiguous training window from \texttt{200.zip}, and the predicted
+final state is combined with the corresponding restart from
+\texttt{restart.zip} to assemble a physically valid restart that NEMO
+can read directly. A smaller \texttt{50.zip} (the first 50 years) is
+provided for quick smoke tests and continuous-integration runs.
+
+\paragraph{Default pipeline.}
+The packaged \texttt{techniques\_config.yaml} selects \textbf{PCA} as
+the dimensionality-reduction technique and
+\textbf{\texttt{GaussianProcessForecaster}} as the forecaster,
+recovering the method of Tissot~et~al. These are the baselines used to
+produce the headline results in Section~\ref{sec:results}. Alternative
+combinations (PCA with the recursive GP, Kernel PCA with either
+forecaster) can be selected by editing a single YAML entry; adding a
+new baseline amounts to subclassing the appropriate base class and
+registering it, without changes to the CLI or the pipeline.
+
+
+\section{Results}
+\label{sec:results}
+
+% TODO: Headline table across baselines + resolutions, qualitative plots,
+% compute cost vs. accuracy trade-off.
+
+
+\section{Discussion}
+\label{sec:discussion}
+
+% TODO: Limitations, generalisation beyond DINO, and how new methods can
+% be plugged in via the published CLI and YAML configs.
+
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+% TODO: Restate contributions and point to the public repositories.
+
+
+\section*{Data availability}
+\label{sec:data}
+
+The DINO dataset used throughout this paper is archived on Zenodo at
+\url{https://doi.org/10.5281/zenodo.19557419}~\citep{archer_dino_dataset_2026}.
+It contains the NEMO/DINO simulation outputs and restart files needed to
+reproduce the benchmark, together with the reference outputs used for
+evaluation.
+
+
+\bibliographystyle{unsrtnat}
+\bibliography{references}  %%% Uncomment this line and comment out the ``thebibliography'' section below to use the external .bib file (using bibtex) .
+
+
+\appendix
+
+\section{Software architecture}
+\label{sec:architecture}
+
+The benchmark is implemented as four loosely-coupled repositories
+(\texttt{nemo-spinup-bench}, \texttt{nemo-spinup-forecast},
+\texttt{nemo-spinup-restart}, and \texttt{nemo-spinup-evaluation}), each
+released as an installable Python package with a \texttt{src/} layout, a
+\texttt{pyproject.toml}, and a console entry point. The separation
+reflects the fact that the same forecasting method might be paired with
+different restart-assembly strategies when targeting different ocean
+models, and that the evaluation tooling is independently useful for
+comparing any pair of ocean simulations. A Zenodo-backed dataset of
+DINO outputs and reference restarts~\citep{archer_dino_dataset_2026} is
+consumed by all four repositories as a submodule, so that the data,
+code, and metrics reported in this paper are reproducible from a single
+commit graph.
+
+\paragraph{Pluggable strategies.}
+Dimensionality reduction and forecasting are expressed as abstract base
+classes (\texttt{DimensionalityReduction} and \texttt{BaseForecaster})
+with small interfaces. Concrete implementations (PCA, kernel PCA,
+direct and recursive Gaussian processes) are registered in a dictionary
+and selected by name through \texttt{techniques\_config.yaml}. Adding a
+new strategy, including deep-learning forecasters built on PyTorch or
+JAX, requires only subclassing the relevant base and registering the
+class; no changes to the orchestration code or the CLI are needed.
+Variable-to-file binding is likewise externalised to
+\texttt{ocean\_terms.yaml}, so different model configurations can be
+targeted without code changes.
+
+\paragraph{Reproducible runs.}
+The forecasting CLI writes each run to a timestamped, content-hashed
+directory under the user-supplied output path, with a
+\texttt{latest} symlink pointing at the most recent run. This keeps
+experimental artefacts isolated and makes bisection over code or
+configuration changes straightforward. Pipeline orchestration is driven
+by a list of \texttt{TermDef} specs: small immutable dataclasses that
+bundle an internal key, a NetCDF variable name, and a source filename,
+so new variables can be added to the pipeline by appending a single
+entry.
+
+\paragraph{Continuous integration.}
+Each repository enforces formatting and linting with \texttt{ruff}, runs
+\texttt{pre-commit} hooks on every push, and executes its full
+\texttt{pytest} suite on every pull request. Test fixtures that require
+real NetCDF inputs are fetched from Zenodo. The evaluation package
+additionally publishes versioned API documentation to Read the Docs on
+successful CI.
+
+\paragraph{Test coverage.}
+The combined test suites exercise PCA round-trip identity to
+$\approx 10^{-5}$, the NEMO restart-variable derivation, coordinate
+handling on real DINO NetCDFs, and the end-to-end pipeline from raw
+outputs to final metrics. Fixtures parametrise tests over every
+registered strategy, so introducing a new dimensionality-reduction or
+forecasting technique automatically expands the coverage matrix.
+
+
+%%% Uncomment this section and comment out the \bibliography{references} line above to use inline references.
+% \begin{thebibliography}{1}
+
+% 	\bibitem{kour2014real}
+% 	George Kour and Raid Saabne.
+% 	\newblock Real-time segmentation of on-line handwritten arabic script.
+% 	\newblock In {\em Frontiers in Handwriting Recognition (ICFHR), 2014 14th
+% 			International Conference on}, pages 417--422. IEEE, 2014.
+
+% 	\bibitem{kour2014fast}
+% 	George Kour and Raid Saabne.
+% 	\newblock Fast classification of handwritten on-line arabic characters.
+% 	\newblock In {\em Soft Computing and Pattern Recognition (SoCPaR), 2014 6th
+% 			International Conference of}, pages 312--318. IEEE, 2014.
+
+% 	\bibitem{hadash2018estimate}
+% 	Guy Hadash, Einat Kermany, Boaz Carmeli, Ofer Lavi, George Kour, and Alon
+% 	Jacovi.
+% 	\newblock Estimate and replace: A novel approach to integrating deep neural
+% 	networks with existing applications.
+% 	\newblock {\em arXiv preprint arXiv:1804.09028}, 2018.
+
+% \end{thebibliography}
+
+
+\end{document}
