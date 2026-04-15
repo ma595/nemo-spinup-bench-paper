@@ -104,9 +104,63 @@ model configurations such as the DINO diabatic pole-to-pole
 setup~\citep{kamm_dino_2025} used throughout this paper.
 
 
- ‘Spin-up’ is the process by which a model is run forward from an initialization state to a stable state. It is a long and computationally expensive step for ocean and climate models. It takes a lot of resources to reach a stable state (of the order to 0.5M CPU-hours for a global ocean model) and has to be repeated for each new experiment (about 5 experiments/year at IPSL), which means that the centre consumes 2.5M cpu-hours/year just to bring the model from an initial state (often arbitrarily taken as having no ocean current and a climatological present-day temperature/salinity) to a stable state that we can analyse, not to mention the human labour to launch and monitor all these runs. This is a global problem at the scale of any centre in the world for oceanic and land components; both have long spin-up phases. Thus, accelerating the spin-up (even by a small amount) by generating better initial states for the ocean models could have a tremendous impact on the field. 
+`Spin-up' is the process of running an ocean or climate model forward
+from an arbitrary initial state (typically no circulation and a
+present-day climatological temperature and salinity) until it reaches a
+statistical equilibrium suitable for analysis. It is one of the most
+computationally expensive steps in climate modelling: reaching
+equilibrium for a global ocean model takes on the order of $0.5$M
+CPU-hours, and must be repeated for every new experiment. At IPSL
+alone, roughly five such experiments per year consume on the order of
+$2.5$M CPU-hours purely on spin-up, before any scientific integration
+begins. The same pattern holds at every modelling centre, and for the
+land component as well as the ocean. Even modest acceleration of
+spin-up would therefore free substantial compute for science.
 
-Accelerating spin-up is both a machine learning problem (generating new states) and a computer science problem (efficiently delivering these new states to the model). The machine learning sophistication of the spin-up problem is very high; it amounts to generating new, high-dimensional states that are physically stable and closer to convergence than the usual initialization. However, with advances in generative learning and the rise of climate emulators, we can realistically hope that deep learning will bring new solutions to the table. History tells us [imagenet, davis, voc, mnist, celeb ...] that the best way to really address a rich deep learning challenge is to build a benchmark and open it for researchers to compete; this will foster a variety of approaches for the deep learning community and is likely to be far more efficient than working solely on the field with the climate science community. The spin-up task is close to image generation or long-term video forecasting, which attract many researchers, although it is rather daunting for researchers outside of oceanography to start due to the complexity of evaluating new states which requires interacting with ocean models
+Accelerating spin-up is simultaneously a machine-learning problem,
+generating high-dimensional ocean states that are physically
+consistent and closer to equilibrium than the standard initialisation,
+and a systems problem, delivering those states back into a running
+ocean model in a format it will accept. The ML side is a natural fit
+for modern generative modelling and climate
+emulators~\citep{kochkov_neural_2024, dheeshjith_samudra_2025,
+meunier_learning_2025, gorce_physically_2025}, yet progress has been
+slowed by the absence of a shared task. Image and video generation
+advanced as fast as they did in part because benchmarks like
+ImageNet, DAVIS and Kinetics gave the community a common yardstick; no
+equivalent exists for ocean spin-up, in large part because evaluating
+a candidate state requires tight coupling to an ocean model, which
+is unfamiliar territory for most ML researchers.
+
+This paper introduces \textbf{nemo-spinup-bench}, an open benchmark
+for AI-accelerated spin-up of the NEMO ocean model. Our contributions
+are:
+
+\begin{itemize}
+  \item A decomposition of the spin-up task into three reusable,
+    independently installable components (forecasting, restart-file
+    construction, and physics-based evaluation), so that ML
+    researchers can plug in a new forecaster without touching NEMO
+    internals, and ocean modellers can reuse the restart and
+    evaluation tooling with any forecaster.
+  \item A published Zenodo dataset of NEMO/DINO outputs and matching
+    annual restart files, together with reference
+    baselines, reproducible pipelines, and continuous integration
+    across all components.
+  \item A reference baseline (PCA with Gaussian-process forecasting)
+    that recovers the method of~\citet{gorce_physically_2025}, and a
+    pluggable architecture that admits deep-learning forecasters as
+    drop-in replacements.
+\end{itemize}
+
+The remainder of the paper is organised as follows.
+Section~\ref{sec:related} situates the work against neural GCMs,
+ocean emulators, and generative approaches to ocean-state
+initialisation. Section~\ref{sec:problem} defines the spin-up task
+and convergence criteria. Section~\ref{sec:benchmark} describes the
+benchmark components, data, and metrics. Section~\ref{sec:baselines}
+details the shipped baselines, and Section~\ref{sec:results} reports
+headline results.
 
 
 \section{Related work}
