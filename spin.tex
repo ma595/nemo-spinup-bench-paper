@@ -32,13 +32,15 @@
     Surbhi Goel\textsuperscript{1},\\[2pt]
     Etienne Meunier\textsuperscript{2},\quad
     Guillaume Gachon\textsuperscript{2},\quad
-    David Kamm\textsuperscript{1},\quad
+    David Kamm\textsuperscript{1,$\ast$},\quad
     Julie Deshayes\textsuperscript{2}
     \\[8pt]
     \textsuperscript{1}Institute of Computing for Climate Science (ICCS), University of Cambridge, UK \\
     \textsuperscript{2}LOCEAN, Institut Pierre-Simon Laplace (IPSL), Sorbonne Universit\'e, France \\[4pt]
-    \textsuperscript{$\dagger$}Correspondence: \texttt{mattjarcher3@gmail.com},\texttt{iccs@cam.ac.uk
+    \textsuperscript{$\ast$}Work carried out while a PhD student at LOCEAN/IPSL under the supervision of J.~Deshayes. \\[2pt]
+    \textsuperscript{$\dagger$}Correspondence: \texttt{mattjarcher3@gmail.com}, \texttt{iccs@cam.ac.uk}
 }
+
 
 % Uncomment to remove the date
 %\date{}
@@ -99,7 +101,7 @@ physically consistent ocean
 states~\citep{meunier_learning_2025, gorce_physically_2025}. Progress
 in this area is increasingly supported by open benchmarks such as
 OceanBench for short-range
-forecasting~\citep{bytezcom_oceanbench_2025}, and by shared idealised
+forecasting~\citep{aouni_oceanbench_2025}, and by shared idealised
 model configurations such as the DINO diabatic pole-to-pole
 setup~\citep{kamm_dino_2025} used throughout this paper.
 
@@ -204,7 +206,7 @@ restart file
 is assembled and evaluated. Every component between the input window and
 the final restart is pluggable. The default pipeline ships a PCA +
 Gaussian process baseline, recovering the behaviour of the original
-spin-up tool~\citep{gorce_physically_2025}, but any alternative
+spin-up tool, but any alternative
 dimensionality-reduction or forecasting strategy can be substituted by
 registering a new class and selecting it through a YAML configuration
 (Section~\ref{sec:baselines}).
@@ -249,25 +251,36 @@ external check on the implementation.
 \subsection{Metrics}
 \label{sec:metrics}
 
-Evaluation is physics-based rather than purely statistical. For each
-canonical variable (temperature, salinity, sea-surface height, and
-derived density), the benchmark reports mean absolute error and RMSE
-against a reference run, computed either on grid output files, on
-restart files, or on both. Variable-to-file binding is driven by a YAML
-mapping, so the same metrics can be applied to different model
-configurations (for example ORCA2/1) and, with appropriate mappings, to
-non-NEMO outputs that adopt a similar data layout.
+Evaluation combines standard error metrics against a reference run
+with a suite of physics-based diagnostics that target specific
+features of the large-scale circulation and water-mass structure. The
+diagnostics shipped with \texttt{nemo-spinup-evaluation} are:
 
-Two features matter for reproducibility. First, the evaluation tool
-validates required coordinates (including the handling of NEMO
-\texttt{nav\_lat}/\texttt{nav\_lon} coordinates, whose loss on variable
-extraction was previously observed to change a representative
-temperature metric from $3.24$ to $11.51$). Second, large datasets are
-loaded lazily through Dask, with an eager-mode toggle for smaller
-files, making the metrics tractable on either a laptop or a high-memory
-node. Temporal alignment between the simulation and the reference is
-handled through CDO-based resampling, so simulations produced at
-different output frequencies can be compared on a common time axis.
+\begin{itemize}
+  \item \textbf{Density monotonicity.} Proportion of grid points at
+    which the in-situ density profile fails to increase with depth,
+    used as a proxy for static stability of the water column.
+  \item \textbf{Thermocline temperature ($T_{500\,\mathrm{m}}$,
+    $30^{\circ}$S--$30^{\circ}$N).} Volume-weighted mean temperature
+    at $500$\,m depth in the tropics, a sensitive indicator of upper-ocean
+    heat content and thermocline drift.
+  \item \textbf{Bottom-water and deep-water temperature boxes.}
+    Volume-weighted mean temperature in a U-shaped ``Bottom Water''
+    box (below $3000$\,m or poleward of $30^{\circ}$) and a
+    complementary ``Deep Water'' box, targeting the long-timescale
+    equilibration of the abyss.
+  \item \textbf{ACC transport (Drake Passage).} Barotropic volume
+    transport through the Drake Passage section, a canonical measure
+    of the strength of the Antarctic Circumpolar Current.
+  \item \textbf{North Atlantic subtropical gyre strength.} Maximum of
+    the barotropic streamfunction in the North Atlantic subtropical
+    gyre region, summarising wind-driven gyre intensity.
+\end{itemize}
+
+A full description of the metrics, including implementation details
+and the handling of coordinates, lazy loading, and temporal
+alignment, is given in the \texttt{nemo-spinup-evaluation}
+documentation.
 
 
 \section{Baselines}
